@@ -1,62 +1,58 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from starlette.requests import Request
 import os
 import shutil
+from main_utils import assemblyai_speech_to_text, generate_gemini_content
 
-# Create a FastAPI instance
 app = FastAPI()
 
-# Setup templates and static file directories
+# Setup static and template directories
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Define API key environment variable (optional if defined in utils.py)
-os.environ["GOOGLE_API_KEY"] = "YOUR_GOOGLE_API_KEY"
-os.environ["ASSEMBLYAI_API_KEY"] = "YOUR_ASSEMBLYAI_API_KEY"
-
-
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    """
-    Render the home page with a form to upload audio files or select input method.
-    """
+async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
 
 @app.post("/uploadfile/")
 async def upload_file(request: Request, file: UploadFile = File(...)):
-    """
-    Endpoint to handle file uploads and process with AssemblyAI.
-    """
-    # Save the uploaded file temporarily
+    # Check file type
+    if file.content_type not in ["audio/wav", "audio/mp3", "audio/m4a"]:
+        return templates.TemplateResponse("index.html", {"request": request, "error": "Unsupported file type."})
+
+    # Save uploaded file
     temp_file_path = f"temp_files/{file.filename}"
     with open(temp_file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Perform speech-to-text using the utility function
-    transcribed_text = assemblyai_speech_to_text(temp_file_path)
+    try:
+        # Perform speech-to-text
+        transcribed_text = assemblyai_speech_to_text(temp_file_path)
 
-    # Perform summarization with Gemini (using your existing utility function)
-    summary_prompt = "Please analyze the following text and summarize it:"
-    summary = generate_gemini_content(transcribed_text, summary_prompt)
+        # Summarization
+        summary_prompt = "Please analyze the following text and summarize it:"
+        summary = generate_gemini_content(transcribed_text, summary_prompt)
 
-    # Remove the temporary file after processing
-    os.remove(temp_file_path)
+        # Clean up temp file
+        os.remove(temp_file_path)
 
-    # Render the result page with transcription and summary
-    return templates.TemplateResponse(
-        "index.html",
-        {
+        return templates.TemplateResponse("index.html", {
             "request": request,
             "transcribed_text": transcribed_text,
-            "summary": summary,
-        },
-    )
+            "summary": summary
+        })
+
+    except Exception as e:
+        # If something goes wrong
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error": f"Error occurred: {str(e)}"
+        })
 
 # If running locally, start the FastAPI server
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8000)
