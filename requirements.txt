@@ -1,0 +1,12 @@
+streamlit
+librosa
+numpy
+streamlit-webrtc
+google-generativeai
+python-dotenv
+assemblyai
+fastapi
+uvicorn
+jinja2
+
+
